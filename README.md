@@ -18,14 +18,14 @@ This project classifies patient reviews of medications into three sentiment cate
 
 ## Current Progress
 
-### Phase 1: Traditional ML (Completed ✅)
+### Phase 1: Traditional ML (Completed)
 - Text preprocessing with negation preservation
 - Word2Vec embeddings (Google News, 300 dimensions)
 - Logistic Regression with class balancing
 - Hyperparameter tuning via GridSearchCV
 - **Result:** 59% accuracy (confirmed model ceiling)
 
-### Phase 2: Deep Learning (In Progress 🚧)
+### Phase 2: Deep Learning (In Progress)
 - LSTM with sequence padding
 - Captures word order and negation patterns
 - *Coming soon...*
