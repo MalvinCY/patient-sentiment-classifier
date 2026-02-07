@@ -12,7 +12,6 @@ data/
 *.pt
 
 # Model files (too large)
-models/
 *.h5
 *.keras
 
