@@ -1,15 +1,15 @@
-
 """
 Patient Sentiment Analysis API
 Predicts sentiment (Negative/Neutral/Positive) for patient drug reviews
 """
 
+import os
 import torch
 import torch.nn as nn
 import numpy as np
 import gensim.downloader as api
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Dict
 import re
 import html
@@ -35,7 +35,7 @@ class SentimentLSTM(nn.Module):
         )
         self.fc = nn.Linear(hidden_dim, num_classes)
         self.dropout = nn.Dropout(dropout)
-    
+
     def forward(self, x):
         lstm_out, (hidden, cell) = self.lstm(x)
         final_hidden = hidden[-1]
@@ -45,7 +45,7 @@ class SentimentLSTM(nn.Module):
 
 # ============= PREPROCESSING =============
 stop_words = set(stopwords.words('english'))
-negation_words = {'no', 'not', 'nor', 'never', 'none', 'nobody', 'nothing', 
+negation_words = {'no', 'not', 'nor', 'never', 'none', 'nobody', 'nothing',
                   'neither', 'nowhere', 'hardly', 'scarcely', 'barely'}
 stop_words = stop_words - negation_words
 
@@ -56,7 +56,7 @@ def preprocess_text(text):
     text = re.sub(r'[^a-z0-9\s]', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
     tokens = text.split()
-    tokens = [word for word in tokens 
+    tokens = [word for word in tokens
               if (word not in stop_words) and (len(word) > 2 or word in negation_words)]
     return ' '.join(tokens)
 
@@ -80,23 +80,40 @@ print("✓ Word2Vec loaded")
 
 print("Loading trained model...")
 model = SentimentLSTM(embedding_dim=300, hidden_dim=128, num_layers=2, num_classes=3, dropout=0.3)
-model.load_state_dict(torch.load('../models/best_lstm_balanced.pth', map_location=device))
-model.to(device)
-model.eval()
-print("✓ Model loaded")
+
+# Determine model path (works both locally and in Docker)
+# Local: run from api/ folder, model at ../models/
+# Docker: run from /app/, model at models/
+model_paths = [
+    'models/best_lstm_balanced.pth',      # Docker path (from /app/)
+    '../models/best_lstm_balanced.pth',   # Local path (from api/)
+]
+
+model_loaded = False
+for model_path in model_paths:
+    if os.path.exists(model_path):
+        model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+        model.to(device)
+        model.eval()
+        print(f"✓ Model loaded from {model_path}")
+        model_loaded = True
+        break
+
+if not model_loaded:
+    print("⚠ Warning: Model file not found. Predictions will fail.")
 
 # ============= PREDICTION FUNCTION =============
 def predict_sentiment(review_text):
     embedding_seq = review_to_embedding_sequence(review_text, word2vec)
     input_tensor = torch.FloatTensor(embedding_seq).unsqueeze(0).to(device)
-    
+
     with torch.no_grad():
         output = model(input_tensor)
         probabilities = torch.softmax(output, dim=1)
         predicted_class = torch.argmax(probabilities, dim=1).item()
-    
+
     label_map = {0: 'Negative', 1: 'Neutral', 2: 'Positive'}
-    
+
     return {
         'prediction': label_map[predicted_class],
         'prediction_id': predicted_class,
@@ -117,12 +134,14 @@ app = FastAPI(
 
 class ReviewRequest(BaseModel):
     review: str
-    class Config:
-        schema_extra = {
+
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "review": "This medication helped with my condition but caused some side effects"
             }
         }
+    )
 
 class PredictionResponse(BaseModel):
     prediction: str
